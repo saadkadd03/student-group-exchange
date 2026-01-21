@@ -1,104 +1,110 @@
 import streamlit as st
 import pandas as pd
+from datetime import datetime
+import os
 
 # ----------------------------
-# Page Configuration
+# File Paths
 # ----------------------------
-st.set_page_config(
-    page_title="Student Group Exchange",
-    page_icon="🔄",
-    layout="centered"
-)
-
-st.title("🔄 Student Group Exchange System (Mutual Request)")
-st.write("Students request exchanges. Swap happens **only if both students request each other** and genders match.")
+STUDENTS_FILE = "students.csv"
+REQUESTS_FILE = "requests.csv"
+LOGS_FILE = "logs.csv"
 
 # ----------------------------
-# Session State Initialization
+# Page Config
 # ----------------------------
-if "students" not in st.session_state:
-    st.session_state.students = pd.DataFrame(
-        columns=["Name", "Gender", "Group"]
-    )
-
-if "requests" not in st.session_state:
-    st.session_state.requests = pd.DataFrame(
-        columns=["Name", "TargetGroup"]
-    )
-
-df = st.session_state.students
-requests_df = st.session_state.requests
+st.set_page_config(page_title="Persistent Group Exchange", layout="centered")
+st.title("🔄 Persistent Student Group Exchange")
+st.write("Students submit mutual requests. Exchanges happen **only if requests match and gender is same**. Data is saved automatically.")
 
 # ----------------------------
-# Add Student Section
+# Helper Functions
 # ----------------------------
-st.subheader("➕ Add a Student")
+def load_csv(path, columns):
+    if os.path.exists(path):
+        return pd.read_csv(path)
+    else:
+        return pd.DataFrame(columns=columns)
 
+def save_csv(df, path):
+    df.to_csv(path, index=False)
+
+def log_action(action, student1, student2=None):
+    logs = load_csv(LOGS_FILE, ["Date", "Action", "Student1", "Student2"])
+    logs = pd.concat([logs, pd.DataFrame([{
+        "Date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "Action": action,
+        "Student1": student1,
+        "Student2": student2 if student2 else ""
+    }])], ignore_index=True)
+    save_csv(logs, LOGS_FILE)
+
+# ----------------------------
+# Load Data
+# ----------------------------
+students = load_csv(STUDENTS_FILE, ["Name", "Gender", "Group"])
+requests_df = load_csv(REQUESTS_FILE, ["Name", "TargetGroup"])
+
+# ----------------------------
+# Add Student
+# ----------------------------
+st.subheader("➕ Add Student")
 with st.form("add_student_form"):
     col1, col2, col3 = st.columns(3)
     with col1:
         name = st.text_input("Student Name")
     with col2:
-        gender = st.selectbox("Gender", ["F", "M"])
+        gender = st.selectbox("Gender", ["F","M"])
     with col3:
         group = st.number_input("Group", min_value=1, step=1)
 
     submitted = st.form_submit_button("Add Student")
-
     if submitted:
         if not name.strip():
             st.error("❌ Name cannot be empty.")
-        elif name in df["Name"].values:
+        elif name in students["Name"].values:
             st.error("❌ Student already exists.")
         else:
-            new_student = pd.DataFrame([{"Name": name.strip(), "Gender": gender, "Group": group}])
-            st.session_state.students = pd.concat([df, new_student], ignore_index=True)
+            students = pd.concat([students, pd.DataFrame([{"Name": name.strip(), "Gender": gender, "Group": group}])], ignore_index=True)
+            save_csv(students, STUDENTS_FILE)
             st.success(f"✅ {name} added successfully!")
-            st.rerun()
+            log_action("Added Student", name)
+            st.experimental_rerun()
 
 # ----------------------------
-# Show Students
+# Display Students
 # ----------------------------
 st.subheader("📋 Current Students")
-if df.empty:
+if students.empty:
     st.info("No students added yet.")
 else:
-    st.dataframe(df, use_container_width=True)
+    st.dataframe(students, use_container_width=True)
 
 # ----------------------------
 # Submit Exchange Request
 # ----------------------------
-st.subheader("📝 Request to Change Group")
-
-if df.empty:
-    st.warning("Please add students first.")
-else:
-    student_name = st.selectbox("Select student", df["Name"].tolist())
-    current_group = df[df["Name"] == student_name]["Group"].iloc[0]
-
-    target_group = st.number_input(
-        "Target Group",
-        min_value=1,
-        step=1,
-        value=current_group
-    )
+st.subheader("📝 Submit Exchange Request")
+if not students.empty:
+    student_name = st.selectbox("Select student", students["Name"].tolist())
+    current_group = students[students["Name"]==student_name]["Group"].iloc[0]
+    target_group = st.number_input("Target Group", min_value=1, step=1, value=current_group)
 
     if st.button("Submit Request"):
         if target_group == current_group:
-            st.warning("⚠ You are already in this group.")
+            st.warning("⚠ Already in this group.")
         elif student_name in requests_df["Name"].values:
             st.warning("⚠ You already submitted a request.")
         else:
-            st.session_state.requests = pd.concat(
-                [requests_df, pd.DataFrame([{"Name": student_name, "TargetGroup": target_group}])],
-                ignore_index=True
-            )
-            st.success(f"Request submitted: {student_name} wants to go to Group {target_group}.")
+            requests_df = pd.concat([requests_df, pd.DataFrame([{"Name": student_name, "TargetGroup": target_group}])], ignore_index=True)
+            save_csv(requests_df, REQUESTS_FILE)
+            st.success(f"Request submitted: {student_name} → Group {target_group}")
+            log_action("Submitted Request", student_name)
+            st.experimental_rerun()
 
 # ----------------------------
 # Show Pending Requests
 # ----------------------------
-st.subheader("📌 Pending Exchange Requests")
+st.subheader("📌 Pending Requests")
 if requests_df.empty:
     st.info("No requests yet.")
 else:
@@ -108,42 +114,39 @@ else:
 # Process Exchanges
 # ----------------------------
 st.subheader("🔁 Process Eligible Exchanges")
-
 if st.button("Process Exchanges"):
     processed = []
     for _, req in requests_df.iterrows():
         student_name = req["Name"]
         target_group = req["TargetGroup"]
-        student = df[df["Name"] == student_name].iloc[0]
+        student = students[students["Name"]==student_name].iloc[0]
         student_gender = student["Gender"]
         current_group = student["Group"]
 
-        # Look for a reciprocal request
+        # Reciprocal request
         reciprocal = requests_df[
-            (requests_df["TargetGroup"] == current_group) &
-            (requests_df["Name"] != student_name)
+            (requests_df["TargetGroup"]==current_group) &
+            (requests_df["Name"]!=student_name)
         ]
-
-        # Filter by gender
         reciprocal = reciprocal[
-            reciprocal["Name"].apply(lambda n: df[df["Name"] == n]["Gender"].iloc[0] == student_gender)
+            reciprocal["Name"].apply(lambda n: students[students["Name"]==n]["Gender"].iloc[0]==student_gender)
         ]
 
         if not reciprocal.empty:
             partner_name = reciprocal.iloc[0]["Name"]
+            partner_group = students[students["Name"]==partner_name]["Group"].iloc[0]
+
             # Swap groups
-            partner_group = df[df["Name"] == partner_name]["Group"].iloc[0]
-            df.loc[df["Name"] == student_name, "Group"] = partner_group
-            df.loc[df["Name"] == partner_name, "Group"] = current_group
+            students.loc[students["Name"]==student_name,"Group"] = partner_group
+            students.loc[students["Name"]==partner_name,"Group"] = current_group
             processed.append(f"{student_name} ↔ {partner_name}")
 
-            # Remove both requests
-            requests_df = requests_df[
-                ~requests_df["Name"].isin([student_name, partner_name])
-            ]
+            # Remove requests
+            requests_df = requests_df[~requests_df["Name"].isin([student_name, partner_name])]
+            log_action("Processed Exchange", student_name, partner_name)
 
-    st.session_state.students = df
-    st.session_state.requests = requests_df
+    save_csv(students, STUDENTS_FILE)
+    save_csv(requests_df, REQUESTS_FILE)
 
     if processed:
         st.success("✅ Exchanges processed:")
@@ -153,7 +156,20 @@ if st.button("Process Exchanges"):
         st.info("No eligible exchanges found.")
 
 # ----------------------------
+# Logs
+# ----------------------------
+st.subheader("📜 Logs")
+if os.path.exists(LOGS_FILE):
+    logs = pd.read_csv(LOGS_FILE)
+    if logs.empty:
+        st.info("No logs yet.")
+    else:
+        st.dataframe(logs, use_container_width=True)
+else:
+    st.info("No logs yet.")
+
+# ----------------------------
 # Footer
 # ----------------------------
 st.markdown("---")
-st.caption("Web app for classroom group management with mutual request system")
+st.caption("Persistent Web App for classroom group management with mutual requests and logs")
