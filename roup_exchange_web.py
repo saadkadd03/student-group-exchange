@@ -11,77 +11,109 @@ st.set_page_config(
 )
 
 st.title("🔄 Student Group Exchange System")
-st.write("Exchange students between groups **only if gender matches**.")
+st.write("Manage student groups and exchange students **based on gender**.")
 
 # ----------------------------
-# Initial Data (Session State)
+# Session State Initialization
 # ----------------------------
 if "students" not in st.session_state:
-    st.session_state.students = pd.DataFrame([
-        {"Name": "Amina", "Gender": "F", "Group": 1},
-        {"Name": "Sara", "Gender": "F", "Group": 2},
-        {"Name": "Fatima", "Gender": "F", "Group": 2},
-        {"Name": "Youssef", "Gender": "M", "Group": 1},
-        {"Name": "Omar", "Gender": "M", "Group": 2},
-        {"Name": "Hamza", "Gender": "M", "Group": 3},
-    ])
+    st.session_state.students = pd.DataFrame(
+        columns=["Name", "Gender", "Group"]
+    )
 
 df = st.session_state.students
 
 # ----------------------------
-# Display Table
+# Add Student Section
+# ----------------------------
+st.subheader("➕ Add a Student")
+
+with st.form("add_student_form"):
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        name = st.text_input("Student Name")
+
+    with col2:
+        gender = st.selectbox("Gender", ["F", "M"])
+
+    with col3:
+        group = st.number_input("Group", min_value=1, step=1)
+
+    submitted = st.form_submit_button("Add Student")
+
+    if submitted:
+        if not name.strip():
+            st.error("❌ Student name cannot be empty.")
+        elif name in df["Name"].values:
+            st.error("❌ Student already exists.")
+        else:
+            new_student = pd.DataFrame(
+                [{"Name": name.strip(), "Gender": gender, "Group": group}]
+            )
+            st.session_state.students = pd.concat(
+                [df, new_student], ignore_index=True
+            )
+            st.success(f"✅ {name} added successfully!")
+            st.rerun()
+
+# ----------------------------
+# Display Students
 # ----------------------------
 st.subheader("📋 Current Students")
-st.dataframe(df, use_container_width=True)
+
+if df.empty:
+    st.info("No students added yet.")
+else:
+    st.dataframe(df, use_container_width=True)
 
 # ----------------------------
 # Exchange Section
 # ----------------------------
-st.subheader("🔁 Request an Exchange")
+st.subheader("🔁 Exchange Students")
 
-student_name = st.selectbox(
-    "Select student",
-    df["Name"].tolist()
-)
+if df.empty:
+    st.warning("Please add students first.")
+else:
+    student_name = st.selectbox(
+        "Select student",
+        df["Name"].tolist()
+    )
 
-target_group = st.selectbox(
-    "Target group",
-    sorted(df["Group"].unique())
-)
+    target_group = st.number_input(
+        "Target Group",
+        min_value=1,
+        step=1
+    )
 
-# ----------------------------
-# Exchange Logic
-# ----------------------------
-if st.button("Exchange"):
-    student = df[df["Name"] == student_name].iloc[0]
+    if st.button("Exchange"):
+        student = df[df["Name"] == student_name].iloc[0]
 
-    if student["Group"] == target_group:
-        st.warning("⚠ Student is already in this group.")
-    else:
-        candidates = df[
-            (df["Group"] == target_group) &
-            (df["Gender"] == student["Gender"])
-        ]
-
-        if candidates.empty:
-            st.error("❌ No student of the same gender found in target group.")
+        if student["Group"] == target_group:
+            st.warning("⚠ Student is already in this group.")
         else:
-            partner = candidates.iloc[0]
+            candidates = df[
+                (df["Group"] == target_group) &
+                (df["Gender"] == student["Gender"])
+            ]
 
-            # Swap groups
-            df.loc[df["Name"] == student_name, "Group"] = target_group
-            df.loc[df["Name"] == partner["Name"], "Group"] = student["Group"]
+            if candidates.empty:
+                st.error("❌ No student of the same gender found in target group.")
+            else:
+                partner = candidates.iloc[0]
 
-            st.success(
-                f"✅ Exchange successful!\n\n"
-                f"🔁 {student_name} ↔ {partner['Name']}"
-            )
+                df.loc[df["Name"] == student_name, "Group"] = target_group
+                df.loc[df["Name"] == partner["Name"], "Group"] = student["Group"]
 
-            st.session_state.students = df
-            st.rerun()
+                st.session_state.students = df
+                st.success(
+                    f"✅ Exchange successful!\n\n"
+                    f"🔁 {student_name} ↔ {partner['Name']}"
+                )
+                st.rerun()
 
 # ----------------------------
 # Footer
 # ----------------------------
 st.markdown("---")
-st.caption("Designed for classroom group management")
+st.caption("Web app for classroom group management")
