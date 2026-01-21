@@ -4,18 +4,25 @@ from datetime import datetime
 import os
 
 # ----------------------------
-# File Paths
+# File Paths for Persistence
 # ----------------------------
 STUDENTS_FILE = "students.csv"
 REQUESTS_FILE = "requests.csv"
 LOGS_FILE = "logs.csv"
 
 # ----------------------------
-# Page Config
+# Page Configuration
 # ----------------------------
-st.set_page_config(page_title="Persistent Group Exchange", layout="centered")
+st.set_page_config(
+    page_title="Persistent Student Group Exchange",
+    layout="centered"
+)
+
 st.title("🔄 Persistent Student Group Exchange")
-st.write("Students submit mutual requests. Exchanges happen **only if requests match and gender is same**. Data is saved automatically.")
+st.write(
+    "Students submit mutual requests. Exchanges happen **only if requests match and gender is same**. "
+    "Data is saved automatically."
+)
 
 # ----------------------------
 # Helper Functions
@@ -40,13 +47,13 @@ def log_action(action, student1, student2=None):
     save_csv(logs, LOGS_FILE)
 
 # ----------------------------
-# Load Data
+# Load Persistent Data
 # ----------------------------
 students = load_csv(STUDENTS_FILE, ["Name", "Gender", "Group"])
 requests_df = load_csv(REQUESTS_FILE, ["Name", "TargetGroup"])
 
 # ----------------------------
-# Add Student
+# Add Student Section
 # ----------------------------
 st.subheader("➕ Add Student")
 with st.form("add_student_form"):
@@ -67,9 +74,8 @@ with st.form("add_student_form"):
         else:
             students = pd.concat([students, pd.DataFrame([{"Name": name.strip(), "Gender": gender, "Group": group}])], ignore_index=True)
             save_csv(students, STUDENTS_FILE)
-            st.success(f"✅ {name} added successfully!")
             log_action("Added Student", name)
-            st.experimental_rerun()
+            st.success(f"✅ {name} added successfully!")
 
 # ----------------------------
 # Display Students
@@ -97,9 +103,8 @@ if not students.empty:
         else:
             requests_df = pd.concat([requests_df, pd.DataFrame([{"Name": student_name, "TargetGroup": target_group}])], ignore_index=True)
             save_csv(requests_df, REQUESTS_FILE)
-            st.success(f"Request submitted: {student_name} → Group {target_group}")
             log_action("Submitted Request", student_name)
-            st.experimental_rerun()
+            st.success(f"Request submitted: {student_name} → Group {target_group}")
 
 # ----------------------------
 # Show Pending Requests
@@ -123,7 +128,7 @@ if st.button("Process Exchanges"):
         student_gender = student["Gender"]
         current_group = student["Group"]
 
-        # Reciprocal request
+        # Find reciprocal request from a student of same gender
         reciprocal = requests_df[
             (requests_df["TargetGroup"]==current_group) &
             (requests_df["Name"]!=student_name)
@@ -141,7 +146,7 @@ if st.button("Process Exchanges"):
             students.loc[students["Name"]==partner_name,"Group"] = current_group
             processed.append(f"{student_name} ↔ {partner_name}")
 
-            # Remove requests
+            # Remove processed requests
             requests_df = requests_df[~requests_df["Name"].isin([student_name, partner_name])]
             log_action("Processed Exchange", student_name, partner_name)
 
@@ -156,7 +161,7 @@ if st.button("Process Exchanges"):
         st.info("No eligible exchanges found.")
 
 # ----------------------------
-# Logs
+# Logs Section
 # ----------------------------
 st.subheader("📜 Logs")
 if os.path.exists(LOGS_FILE):
